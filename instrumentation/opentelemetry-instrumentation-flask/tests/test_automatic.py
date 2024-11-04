@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import click
 import flask
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
@@ -94,3 +95,27 @@ class TestAutomatic(InstrumentationTest, WsgiTestBase):
 
         span_list = self.memory_exporter.get_finished_spans()
         self.assertEqual(len(span_list), 0)
+
+
+@app.cli.command("mycommand")
+@click.option("--option", default="default")
+def flask_command(option):
+    pass
+
+
+def test_cli_command_wrapping(runner):
+    FlaskInstrumentor().instrument()
+
+    result = runner.invoke(args=["mycommand"])
+    (span,) = self.memory_exporter.get_finished_spans()
+
+    FlaskInstrumentor().uninstrument()
+
+
+def test_cli_command_wrapping_with_options(runner):
+    FlaskInstrumentor().instrument()
+    result_with_option = runner.invoke(
+        args=["mycommand", "--option", "option"]
+    )
+    (span,) = self.memory_exporter.get_finished_spans()
+    FlaskInstrumentor().uninstrument()
