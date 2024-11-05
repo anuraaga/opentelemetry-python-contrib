@@ -627,12 +627,11 @@ class _InstrumentedFlask(flask.Flask):
         self.teardown_request(_teardown_request)
 
 
-def _cli_command_wrapper(wrapped, instance, args, kwargs, tracer):
-    span_name = "cli span name"
-    span_attributes = {}
+def _cli_invoke_wrapper(wrapped, instance, args, kwargs, tracer):
+    callback = args[0] if args else kwargs.get("__callback")
 
-    print("AAAAAAAAAAA", args, kwargs)
-    print("AAAAAAAAAAA", wrapped, instance)
+    span_name = callback.__name__
+    span_attributes = {}
 
     with tracer.start_as_current_span(
         name=span_name,
@@ -696,16 +695,20 @@ class FlaskInstrumentor(BaseInstrumentor):
             tracer_provider,
             schema_url=_get_schema_url(sem_conv_opt_in_mode),
         )
+        import click
+
         wrap_function_wrapper(
-            "flask.cli",
-            "AppGroup.command",
-            partial(_cli_command_wrapper, tracer=tracer),
+            click.core.Context,
+            "invoke",
+            partial(_cli_invoke_wrapper, tracer=tracer),
         )
 
     def _uninstrument(self, **kwargs):
         flask.Flask = self._original_flask
 
-        unwrap(flask.cli.AppGroup, "command")
+        import click
+
+        unwrap(click.core.Context, "invoke")
 
     # pylint: disable=too-many-locals
     @staticmethod
