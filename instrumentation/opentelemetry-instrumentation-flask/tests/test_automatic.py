@@ -108,7 +108,7 @@ class TestAutomatic(InstrumentationTest, WsgiTestBase):
         (span,) = self.memory_exporter.get_finished_spans()
 
         self.assertEqual(span.status.status_code, StatusCode.UNSET)
-        self.assertEqual(span.name, "flask_command")
+        self.assertEqual(span.name, "flask-command")
 
     def test_cli_command_wrapping_with_name(self):
         @self.app.cli.command("mycommand")
@@ -117,7 +117,6 @@ class TestAutomatic(InstrumentationTest, WsgiTestBase):
             pass
 
         runner = self.app.test_cli_runner()
-        print(runner)
         result = runner.invoke(args=["mycommand"])
         (span,) = self.memory_exporter.get_finished_spans()
 
@@ -138,7 +137,7 @@ class TestAutomatic(InstrumentationTest, WsgiTestBase):
         (span,) = self.memory_exporter.get_finished_spans()
 
         self.assertEqual(span.status.status_code, StatusCode.UNSET)
-        self.assertEqual(span.name, "my_command_with_opts")
+        self.assertEqual(span.name, "my-command-with-opts")
 
     def test_cli_command_raises_error(self):
         @self.app.cli.command()
@@ -151,4 +150,4 @@ class TestAutomatic(InstrumentationTest, WsgiTestBase):
         (span,) = self.memory_exporter.get_finished_spans()
 
         self.assertEqual(span.status.status_code, StatusCode.ERROR)
-        self.assertEqual(span.name, "command_raises")
+        self.assertEqual(span.name, "command-raises")

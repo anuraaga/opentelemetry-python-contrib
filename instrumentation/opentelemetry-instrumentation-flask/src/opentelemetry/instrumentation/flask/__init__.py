@@ -628,9 +628,16 @@ class _InstrumentedFlask(flask.Flask):
 
 
 def _cli_invoke_wrapper(wrapped, instance, args, kwargs, tracer):
-    callback = args[0] if args else kwargs.get("__callback")
+    import click
+    # Subclasses of Command include groups and CLI runners, but
+    # we only want to instrument the actual commands which are
+    # instances of Command itself.
+    if instance.__class__ != click.Command:
+        return wrapped(*args, **kwargs)
 
-    span_name = callback.__name__
+    ctx = args[0]
+
+    span_name = ctx.info_name
     span_attributes = {}
 
     with tracer.start_as_current_span(
@@ -697,8 +704,9 @@ class FlaskInstrumentor(BaseInstrumentor):
         )
         import click
 
+        print("FOOFOO")
         wrap_function_wrapper(
-            click.core.Context,
+            click.core.Command,
             "invoke",
             partial(_cli_invoke_wrapper, tracer=tracer),
         )
@@ -708,7 +716,7 @@ class FlaskInstrumentor(BaseInstrumentor):
 
         import click
 
-        unwrap(click.core.Context, "invoke")
+        unwrap(click.core.Command, "invoke")
 
     # pylint: disable=too-many-locals
     @staticmethod
