@@ -240,6 +240,7 @@ API
 """
 
 import weakref
+from functools import partial
 from logging import getLogger
 from time import time_ns
 from timeit import default_timer
@@ -247,6 +248,7 @@ from typing import Collection
 
 import flask
 from packaging import version as package_version
+from wrapt import wrap_function_wrapper
 
 import opentelemetry.instrumentation.wsgi as otel_wsgi
 from opentelemetry import context, trace
@@ -264,14 +266,19 @@ from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.propagators import (
     get_global_response_propagator,
 )
-from opentelemetry.instrumentation.utils import _start_internal_or_server_span
+from opentelemetry.instrumentation.utils import (
+    _start_internal_or_server_span,
+    unwrap,
+)
 from opentelemetry.metrics import get_meter
+from opentelemetry.semconv.attributes.error_attributes import ERROR_TYPE
 from opentelemetry.semconv.attributes.http_attributes import HTTP_ROUTE
 from opentelemetry.semconv.metrics import MetricInstruments
 from opentelemetry.semconv.metrics.http_metrics import (
     HTTP_SERVER_REQUEST_DURATION,
 )
 from opentelemetry.semconv.trace import SpanAttributes
+from opentelemetry.trace.status import StatusCode
 from opentelemetry.util._importlib_metadata import version
 from opentelemetry.util.http import (
     get_excluded_urls,
@@ -620,6 +627,25 @@ class _InstrumentedFlask(flask.Flask):
         self.teardown_request(_teardown_request)
 
 
+def _cli_invoke_wrapper(wrapped, instance, args, kwargs, tracer):
+    callback = args[0] if args else kwargs.get("__callback")
+
+    span_name = callback.__name__
+    span_attributes = {}
+
+    with tracer.start_as_current_span(
+        name=span_name,
+        kind=trace.SpanKind.INTERNAL,
+        attributes=span_attributes,
+    ) as span:
+        try:
+            return wrapped(*args, **kwargs)
+        except Exception as exc:
+            span.set_status(StatusCode.ERROR, str(exc))
+            span.set_attribute(ERROR_TYPE, exc.__class__.__qualname__)
+            raise
+
+
 class FlaskInstrumentor(BaseInstrumentor):
     # pylint: disable=protected-access,attribute-defined-outside-init
     """An instrumentor for flask.Flask
@@ -662,8 +688,27 @@ class FlaskInstrumentor(BaseInstrumentor):
 
         flask.Flask = _InstrumentedFlask
 
+        # TODO: this is duplicated from _InstrumentedFlask, hopefully will be resolved once moving out of subclassing
+        tracer = trace.get_tracer(
+            __name__,
+            __version__,
+            tracer_provider,
+            schema_url=_get_schema_url(sem_conv_opt_in_mode),
+        )
+        import click
+
+        wrap_function_wrapper(
+            click.core.Context,
+            "invoke",
+            partial(_cli_invoke_wrapper, tracer=tracer),
+        )
+
     def _uninstrument(self, **kwargs):
         flask.Flask = self._original_flask
+
+        import click
+
+        unwrap(click.core.Context, "invoke")
 
     # pylint: disable=too-many-locals
     @staticmethod

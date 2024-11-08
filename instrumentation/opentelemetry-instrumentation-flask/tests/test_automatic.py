@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import click
 import flask
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
@@ -19,6 +20,7 @@ from werkzeug.wrappers import Response
 from opentelemetry import trace as trace_api
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.test.wsgitestutil import WsgiTestBase
+from opentelemetry.trace.status import StatusCode
 
 # pylint: disable=import-error
 from .base_test import InstrumentationTest
@@ -94,3 +96,59 @@ class TestAutomatic(InstrumentationTest, WsgiTestBase):
 
         span_list = self.memory_exporter.get_finished_spans()
         self.assertEqual(len(span_list), 0)
+
+    def test_cli_command_wrapping(self):
+        @self.app.cli.command()
+        def flask_command():
+            print("flask")
+            pass
+
+        runner = self.app.test_cli_runner()
+        result = runner.invoke(args=["flask-command"])
+        (span,) = self.memory_exporter.get_finished_spans()
+
+        self.assertEqual(span.status.status_code, StatusCode.UNSET)
+        self.assertEqual(span.name, "flask_command")
+
+    def test_cli_command_wrapping_with_name(self):
+        @self.app.cli.command("mycommand")
+        def flask_command():
+            print("my")
+            pass
+
+        runner = self.app.test_cli_runner()
+        print(runner)
+        result = runner.invoke(args=["mycommand"])
+        (span,) = self.memory_exporter.get_finished_spans()
+
+        self.assertEqual(span.status.status_code, StatusCode.UNSET)
+        self.assertEqual(span.name, "mycommand")
+
+    def test_cli_command_wrapping_with_options(self):
+        @self.app.cli.command()
+        @click.option("--option", default="default")
+        def my_command_with_opts(option):
+            print("opts")
+            pass
+
+        runner = self.app.test_cli_runner()
+        result = runner.invoke(
+            args=["my-command-with-opts", "--option", "option"],
+        )
+        (span,) = self.memory_exporter.get_finished_spans()
+
+        self.assertEqual(span.status.status_code, StatusCode.UNSET)
+        self.assertEqual(span.name, "my_command_with_opts")
+
+    def test_cli_command_raises_error(self):
+        @self.app.cli.command()
+        def command_raises():
+            print("raises")
+            raise ValueError()
+
+        runner = self.app.test_cli_runner()
+        result = runner.invoke(args=["command-raises"])
+        (span,) = self.memory_exporter.get_finished_spans()
+
+        self.assertEqual(span.status.status_code, StatusCode.ERROR)
+        self.assertEqual(span.name, "command_raises")
