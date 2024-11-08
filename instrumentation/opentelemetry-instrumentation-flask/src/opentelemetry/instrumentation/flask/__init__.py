@@ -704,7 +704,6 @@ class FlaskInstrumentor(BaseInstrumentor):
         )
         import click
 
-        print("FOOFOO")
         wrap_function_wrapper(
             click.core.Command,
             "invoke",
